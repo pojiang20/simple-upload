@@ -35,19 +35,26 @@ func newErrorResponse(err error) errorResponse {
 	}
 }
 
-func writeError(w http.ResponseWriter, wErr error) (int, error) {
+func WriteError(w http.ResponseWriter, statusCode int, wErr error) (int, error) {
+	if statusCode == 0 {
+		statusCode = http.StatusInternalServerError
+	}
+	w.WriteHeader(statusCode)
 	body := newErrorResponse(wErr)
 	b, err := json.Marshal(body)
 	if err != nil {
+		Zlog.Info("writeError Marshal error")
 		return w.Write([]byte{})
 	}
 	return w.Write(b)
 }
 
-func writeSuccess(w http.ResponseWriter, path string) (int, error) {
+func WriteSuccess(w http.ResponseWriter, path string) (int, error) {
+	w.WriteHeader(http.StatusOK)
 	body := newUploadedResponse(path)
 	b, err := json.Marshal(body)
 	if err != nil {
+		Zlog.Info("writeSuccess Marshal error")
 		return w.Write([]byte{})
 	}
 	return w.Write(b)
