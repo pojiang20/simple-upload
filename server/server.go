@@ -20,83 +20,63 @@ var (
 )
 
 type Server struct {
-	DocumentRoot  string
+	r *gin.Engine
+	//fs *FileSystem
+
+	publiDirPath  string
 	MaxUploadSize int64
 	SecureToken   string
 }
 
-func NewServer(documentRoot string, maxUploadSize int64, token string) Server {
-	return Server{
-		documentRoot,
-		maxUploadSize,
-		token,
+func NewServer(maxUploadSize int64, token string) *Server {
+	publicDir, err := getPublicDir()
+	if err != nil {
+		return nil
+	}
+	return &Server{
+		r:             gin.New(),
+		publiDirPath:  publicDir,
+		MaxUploadSize: maxUploadSize,
+		SecureToken:   token,
 	}
 }
 
-// 下载文件
-func (s *Server) handleGet(w http.ResponseWriter, r *http.Request) {
-	if !rePathFiles.MatchString(r.URL.Path) {
-		util.WriteError(w, http.StatusNotFound, fmt.Errorf("\"%s\" is not found", r.URL.Path))
-		return
+func getPublicDir() (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", err
 	}
-	/*
-		 FileServer 已经明确静态文件的根目录在"/tmp"，但是我们希望URL以"/tmpfiles/"开头。
-		如果有人请求"/tempfiles/example.txt"，我们希望服务器能将文件发送给他。
-		为了达到这个目的，我们必须从URL中过滤掉"/tmpfiles", 而剩下的路径是相对于根目录"/tmp"的相对路径。
-	*/
-	http.StripPrefix("/files/", http.FileServer(http.Dir(s.DocumentRoot))).ServeHTTP(w, r)
+	publicDir := path.Join(dir, "/public")
+	if _, err := os.Stat(publicDir); err != nil {
+		if os.IsNotExist(err) {
+			err = os.Mkdir(publicDir, 0755)
+			if err != nil {
+				util.Zlog.Errorf("mkdir %s error: %v", dir, err)
+				return "", err
+			}
+		}
+	}
+	return publicDir, nil
 }
 
-// 表单上传
-func (s *Server) handlePost(w http.ResponseWriter, r *http.Request) {
-	srcFile, info, err := r.FormFile("file")
-	if err != nil {
-		util.Zlog.Error("Failed to acquire the uploaded content")
-		util.WriteError(w, http.StatusInternalServerError, err)
-		return
-	}
-	defer srcFile.Close()
+func (s *Server) Run(Address string) error {
+	r := s.r
 
-	size, err := util.GetSize(srcFile)
-	if err != nil {
-		util.Zlog.Error("Failed to get the size of the uploaded content")
-		util.WriteError(w, http.StatusInternalServerError, err)
-		return
+	r.Static("/zenfs/public", s.publiDirPath)
+	v1 := r.Group("/zenfs")
+	{
+		v1.GET("/", indexPage)
+		v1.POST("/upload/", s.uploadHandler)
 	}
-	if size > s.MaxUploadSize {
-		util.Zlog.Error("File size exceeded")
-		util.WriteError(w, http.StatusRequestEntityTooLarge, errors.New("uploaded file size exceeds the limit"))
-		return
-	}
+	return s.r.Run(Address)
+}
 
-	body, err := io.ReadAll(srcFile)
+func (s *Server) uploadHandler(c *gin.Context) {
+	info, err := c.FormFile("file")
 	if err != nil {
-		util.Zlog.Error("Failed to read the uploaded content")
-		util.WriteError(w, http.StatusInternalServerError, err)
-		return
+		c.JSON(http.StatusInternalServerError, err)
 	}
-	filename := info.Filename
-	if filename == "" {
-		filename = fmt.Sprintf("%x", sha1.Sum(body))
-	}
-
-	dstPath := path.Join(s.DocumentRoot, filename)
-	dstFile, err := os.OpenFile(dstPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
-	if err != nil {
-		util.Zlog.Error("failed to open the file")
-		util.WriteError(w, http.StatusInternalServerError, err)
-		return
-	}
-	defer dstFile.Close()
-	if written, err := dstFile.Write(body); err != nil {
-		util.WriteError(w, http.StatusInternalServerError, err)
-		return
-	} else if int64(written) != size {
-		util.Zlog.Error("uploaded file size and written size differ")
-		util.WriteError(w, http.StatusInternalServerError, fmt.Errorf("the size of uploaded content is %d, but %d bytes written", size, written))
-	}
-	util.Zlog.Info("file uploaded by Post")
-	util.WriteSuccess(w, util.GetUrl(dstPath, s.DocumentRoot))
+	c.SaveUploadedFile(info, s.publiDirPath)
 }
 
 func (s *Server) handlePut(w http.ResponseWriter, r *http.Request) {
