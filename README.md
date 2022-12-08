@@ -24,10 +24,13 @@ aa
 gin框架下的upload，实现了上传和下载，并有相应的测试。
 
 ### upload0.20
-断点续传，断点续传是基于分片上传的，
-- 对于用户来说，就是使用客户端提交上传请求。
-- 客户端则是存储提交过程的UploadId，且提交上传请求UploadId和Etag，从某一个分片开始继续上传。
-- 服务器端则是提供分片上传接口即可，包括Init初始化来分配UploadId、partUpload上传分片返回一个分片的etag、complete完成上传打包成一个文件。
+断点续传功能
+断点续传是基于分片上传的，对于用户来说，就是使用客户端提交上传请求。客户端则是存储提交过程的UploadId，且提交上传请求UploadId和Etag，从某一个分片开始继续上传。
+服务器端则是提供分片上传接口即可。 
+- Init初始化来分配UploadId，服务器分配文件名称。
+- UploadPart上传分片返回一个分片的etag，服务器存储。
+- Complete完成上传打包成一个文件，服务器合并。
+
 
 #### Put和Post上传文件比较
 [putvspost](https://github.com/pojiang20/Notes/blob/dev/other/PutvsPost.md)
