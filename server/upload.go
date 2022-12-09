@@ -37,13 +37,19 @@ func (u *uploader) Init(key string) (string, error) {
 	}
 	//分配uploadId
 	uploadId := genUploadId()
-	info := InitInfo{key, uploadId}
+	info := UploadInfo{Key: key, UploadId: uploadId}
 	//不存在则记录
 	u.partInfo.SetInit(info)
 	return uploadId, nil
 }
 
 func (u *uploader) UploadPart(body io.Reader, key string, partNum int64, uploadId string) (int64, error) {
+	//校验一下key和uploadId
+	if !u.keyUploadIdMatch(key, uploadId) {
+		util.Zlog.Info("key dose not match uploadId")
+		return 0, nil
+	}
+
 	partName := fmt.Sprintf("%s_%d", key, partNum)
 
 	fileSize := u.partSave(body, partName)
@@ -55,7 +61,7 @@ func (u *uploader) UploadPart(body io.Reader, key string, partNum int64, uploadI
 		PartNumber: partNum,
 		partSize:   int(fileSize),
 	}
-	u.partInfo.SetPart(uploadId, partinfo)
+	u.partInfo.SetPart(key, partinfo)
 	return fileSize, nil
 }
 
@@ -134,9 +140,7 @@ func (u *uploader) partValid(key, uploadId string, extra CompleteExtra) bool {
 	if !u.partInfo.Exist(key) {
 		return false
 	}
-	//key和uploadId一致
-	initInfo := u.partInfo.GetInit(key)
-	if uploadId != initInfo.uploadId {
+	if !u.keyUploadIdMatch(key, uploadId) {
 		return false
 	}
 	//校验分片数量
@@ -145,6 +149,15 @@ func (u *uploader) partValid(key, uploadId string, extra CompleteExtra) bool {
 		return false
 	}
 	return true
+}
+
+func (u *uploader) keyUploadIdMatch(key, uploadId string) bool {
+	//key和uploadId一致
+	initInfo := u.partInfo.GetInit(key)
+	if uploadId == initInfo.UploadId {
+		return true
+	}
+	return false
 }
 
 func genPartName(key string, partNum int64) string {
