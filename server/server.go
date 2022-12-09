@@ -10,7 +10,6 @@ import (
 
 type Server struct {
 	r *gin.Engine
-	//fs *FileSystem
 
 	publiDirPath  string
 	MaxUploadSize int64
@@ -18,7 +17,8 @@ type Server struct {
 }
 
 func NewServer(maxUploadSize int64, token string) *Server {
-	publicDir, err := getPublicDir()
+	absPath, _ := os.Getwd()
+	publicDir, err := util.GenDir(absPath, "public")
 	if err != nil {
 		return nil
 	}
@@ -30,34 +30,23 @@ func NewServer(maxUploadSize int64, token string) *Server {
 	}
 }
 
-func getPublicDir() (string, error) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	publicDir := path.Join(dir, "/public")
-	if _, err := os.Stat(publicDir); err != nil {
-		if os.IsNotExist(err) {
-			err = os.Mkdir(publicDir, 0755)
-			if err != nil {
-				util.Zlog.Errorf("mkdir %s error: %v", dir, err)
-				return "", err
-			}
-		}
-	}
-	return publicDir, nil
-}
-
 func (s *Server) Run(Address string) error {
 	r := s.r
 
 	r.Static("/zenfs/public", s.publiDirPath)
 	v1 := r.Group("/zenfs")
 	{
-		v1.GET("/", indexPage)
+		v1.GET("/", s.index)
 		v1.POST("/upload", s.uploadHandler)
+
+		//分片上传
+
 	}
 	return s.r.Run(Address)
+}
+
+func (s *Server) index(c *gin.Context) {
+	c.JSON(http.StatusOK, "This is Zenfs")
 }
 
 func (s *Server) uploadHandler(c *gin.Context) {
