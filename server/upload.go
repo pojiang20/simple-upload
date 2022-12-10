@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"strconv"
 )
 
 const (
@@ -19,21 +20,23 @@ type uploader struct {
 	publicDir string
 }
 
-func NewUploader(publicDir string) (*uploader, error) {
+func NewUploader(publicDir string, addr string) (*uploader, error) {
 	if len(publicDir) == 0 {
 		return nil, util.ErrInvalidArgument
 	}
 	absPath, _ := os.Getwd()
 	cacheDir, _ := util.GenDir(absPath, "cache")
+	partInfo := NewMongoStorage(addr)
 	return &uploader{
 		publicDir: publicDir,
 		cacheDir:  cacheDir,
+		partInfo:  partInfo,
 	}, nil
 }
 
 func (u *uploader) Init(key string) (string, error) {
-	if !u.partInfo.Exist(key) {
-		return "", fmt.Errorf("file not exist")
+	if u.partInfo.Exist(key) {
+		return "", fmt.Errorf("file already exist")
 	}
 	//分配uploadId
 	uploadId := genUploadId()
@@ -43,31 +46,31 @@ func (u *uploader) Init(key string) (string, error) {
 	return uploadId, nil
 }
 
-func (u *uploader) UploadPart(body io.Reader, key string, partNum int64, uploadId string) (int64, error) {
+func (u *uploader) UploadPart(body io.Reader, key string, partNum int64, uploadId string) (string, int64, error) {
 	//校验一下key和uploadId
 	if !u.keyUploadIdMatch(key, uploadId) {
 		util.Zlog.Info("key dose not match uploadId")
-		return 0, nil
+		return "", 0, nil
 	}
 
 	partName := fmt.Sprintf("%s_%d", key, partNum)
 
-	fileSize := u.partSave(body, partName)
+	fileSize := u.partSave(body, partName, u.cacheDir)
 	util.Zlog.Infof("pieceSave %s success,filesize is %d", partName, fileSize)
 
-	etag := "etag"
+	etag := strconv.FormatInt(fileSize, 16)
 	partinfo := UploadPartInfo{
 		Etag:       etag,
 		PartNumber: partNum,
-		partSize:   int(fileSize),
+		PartSize:   int(fileSize),
 	}
 	u.partInfo.SetPart(key, partinfo)
-	return fileSize, nil
+	return etag, fileSize, nil
 }
 
 func (u *uploader) Complete(key string, uploadId string, extra CompleteExtra) error {
 	if !u.partValid(key, uploadId, extra) {
-		return fmt.Errorf("Invalid")
+		return util.ErrKeyNotExist
 	}
 	n, err := u.partMerge(key)
 	if err != nil {
@@ -91,14 +94,14 @@ func genUploadId() string {
 	return TEMPUPLOADID
 }
 
-func (u *uploader) partSave(body io.Reader, name string) int64 {
-	f, err := os.Stat(name)
+func (u *uploader) partSave(body io.Reader, name, cacheDir string) int64 {
+	filePath := path.Join(cacheDir, name)
+	_, err := os.Stat(filePath)
 	if os.IsExist(err) {
-		util.Zlog.Info("part %s exist", name)
-		return f.Size()
+		os.Remove(filePath)
 	}
 
-	curF, err := os.Create(name)
+	curF, err := os.Create(filePath)
 	defer curF.Close()
 	if err != nil {
 		util.Zlog.Fatal(err)
@@ -114,6 +117,7 @@ func (u *uploader) partSave(body io.Reader, name string) int64 {
 func (u *uploader) partMerge(key string) (int, error) {
 	filePath := path.Join(u.publicDir, key)
 	f, err := os.OpenFile(filePath, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0777)
+	defer f.Close()
 	if err != nil {
 		return 0, fmt.Errorf("file create failed")
 	}
@@ -122,11 +126,12 @@ func (u *uploader) partMerge(key string) (int, error) {
 	partInfo := u.partInfo.GetPart(key)
 	for _, item := range partInfo {
 		partFile := genPartName(key, item.PartNumber)
-		content, err := os.ReadFile(partFile)
+		partFilePath := path.Join(u.cacheDir, partFile)
+		content, err := os.ReadFile(partFilePath)
 		if err != nil {
 			return 0, fmt.Errorf("part file open failed")
 		}
-		if len(content) != item.partSize {
+		if len(content) != item.PartSize {
 			return 0, fmt.Errorf("part file read size error")
 		}
 		n, _ := f.Write(content)
