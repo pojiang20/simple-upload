@@ -78,54 +78,74 @@ func (s *Server) OneTimeUpload(c *gin.Context) {
 
 func (s *Server) initPart(c *gin.Context) {
 	key := c.Query("key")
+	var msg respMsg
 	if len(key) == 0 {
-		errMsg := fmt.Sprintf("initPart error: %v", util.ErrKeyNotExist)
-		c.JSON(http.StatusInternalServerError, errMsg)
+		msg.Msg = fmt.Sprintf("initPart error: %v", util.ErrKeyNotExist)
+		c.JSON(http.StatusInternalServerError, msg)
 		return
 	}
-	uploadId, err := s.up.Init(key)
+	info, err := s.up.Init(key)
 	if err != nil {
-		errMsg := fmt.Sprintf("initPart error: %v", err)
-		c.JSON(http.StatusInternalServerError, errMsg)
+		msg.Msg = fmt.Sprintf("initPart error: %v", err)
+		c.JSON(http.StatusInternalServerError, msg)
 		return
 	}
-	c.JSON(http.StatusOK, "Init success,uploadId:"+uploadId)
+	msg.Msg = "initPart success"
+	msg.Info = info
+	c.JSON(http.StatusOK, msg)
 	return
 }
 
 // PUT /uploads/<UploadId>/<PartNumber> HTTP/1.1
 func (s *Server) uploadPart(c *gin.Context) {
+	var msg respMsg
 	partSize := c.Request.ContentLength
 	if partSize == -1 {
-		c.JSON(http.StatusBadRequest, "invalid part size")
+		msg.Msg = "invalid part size"
+		c.JSON(http.StatusBadRequest, msg)
 	}
 	key := c.Query("key")
 	uploadId := c.Query("UploadId")
 	partNum, _ := strconv.Atoi(c.Query("PartNumber"))
-	etag, fileSize, err := s.up.UploadPart(c.Request.Body, key, int64(partNum), uploadId)
+	etag, fileSize, err := s.up.UploadPart(c.Request.Body, key, partNum, uploadId)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, "upload part failed, error "+err.Error())
+		msg.Msg = "upload part failed, error " + err.Error()
+		c.JSON(http.StatusBadRequest, msg)
 		return
 	}
-	msg := fmt.Sprintf("uploadPart success,partNum:%d,etag: %s,fileSize:%d", partNum, etag, fileSize)
+	msg.Msg = "uploadPart success"
+	msg.Info = UploadInfo{
+		Key:      key,
+		UploadId: uploadId,
+		Etags:    []UploadPartInfo{{Etag: etag, PartNumber: partNum, PartSize: fileSize}},
+	}
 	c.JSON(http.StatusOK, msg)
 	return
 }
 
 func (s *Server) complete(c *gin.Context) {
+	var msg respMsg
 	key := c.Query("key")
 	uploadId := c.Query("uploadId")
 	progress := []UploadPartInfo{}
 	err := json.NewDecoder(c.Request.Body).Decode(&progress)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, "complete failed, error "+err.Error())
+		msg.Msg = "complete failed, error " + err.Error()
+		c.JSON(http.StatusBadRequest, msg)
 		return
 	}
 	err = s.up.Complete(key, uploadId, CompleteExtra{progress})
 	if err != nil {
-		c.JSON(http.StatusBadRequest, "complete failed, error "+err.Error())
+		msg.Msg = "complete failed, error " + err.Error()
+		c.JSON(http.StatusBadRequest, msg)
 		return
 	}
-	c.JSON(http.StatusOK, "complete success")
+	msg.Msg = "complete success"
+	c.JSON(http.StatusOK, msg)
 	return
+}
+
+type respMsg struct {
+	Msg  string      `json:"msg"`
+	Info interface{} `json:"info"`
 }

@@ -34,6 +34,10 @@ gin框架下的upload，实现了上传和下载，并有相应的测试。
 #### uploadId
 uploadId的设置很像三次握手的第二次，uploadId是服务器端给客户端的一个确认，后续客户端通信就拿着这个确认回执来发送消息。这样的好处是：如果以单个key作为上传凭证，那任何获取到key的机器都可以上传内容，不安全。
 
+#### 问题
+- [ ] 没有鉴权
+
+### 参考
 #### Put和Post上传文件比较
 [putvspost](https://github.com/pojiang20/Notes/blob/dev/other/PutvsPost.md)
 

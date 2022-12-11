@@ -22,6 +22,6 @@ type CompleteExtra struct {
 
 type UploadPartInfo struct {
 	Etag       string
-	PartNumber int64
-	PartSize   int
+	PartNumber int
+	PartSize   int64
 }

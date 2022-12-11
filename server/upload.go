@@ -1,16 +1,13 @@
 package server
 
 import (
+	"crypto/md5"
 	"fmt"
 	"github.com/pojiang20/simple-upload/util"
 	"io"
 	"os"
 	"path"
 	"strconv"
-)
-
-const (
-	TEMPUPLOADID = "15445"
 )
 
 type uploader struct {
@@ -34,19 +31,19 @@ func NewUploader(publicDir string, addr string) (*uploader, error) {
 	}, nil
 }
 
-func (u *uploader) Init(key string) (string, error) {
+func (u *uploader) Init(key string) (*UploadInfo, error) {
 	if u.partInfo.Exist(key) {
-		return "", fmt.Errorf("file already exist")
+		return nil, fmt.Errorf("file already exist")
 	}
 	//分配uploadId
-	uploadId := genUploadId()
+	uploadId := genUploadId(key)
 	info := UploadInfo{Key: key, UploadId: uploadId}
 	//不存在则记录
 	u.partInfo.SetInit(info)
-	return uploadId, nil
+	return &info, nil
 }
 
-func (u *uploader) UploadPart(body io.Reader, key string, partNum int64, uploadId string) (string, int64, error) {
+func (u *uploader) UploadPart(body io.Reader, key string, partNum int, uploadId string) (string, int64, error) {
 	//校验一下key和uploadId
 	if !u.keyUploadIdMatch(key, uploadId) {
 		util.Zlog.Info("key dose not match uploadId")
@@ -62,7 +59,7 @@ func (u *uploader) UploadPart(body io.Reader, key string, partNum int64, uploadI
 	partinfo := UploadPartInfo{
 		Etag:       etag,
 		PartNumber: partNum,
-		PartSize:   int(fileSize),
+		PartSize:   fileSize,
 	}
 	u.partInfo.SetPart(key, partinfo)
 	return etag, fileSize, nil
@@ -90,8 +87,9 @@ func (u *uploader) PartList(key string) ([]UploadPartInfo, error) {
 }
 
 // 先不考虑DB，只能申请唯一UploadId
-func genUploadId() string {
-	return TEMPUPLOADID
+func genUploadId(key string) string {
+	uploadId := fmt.Sprintf("%x", md5.Sum([]byte(key)))
+	return uploadId
 }
 
 func (u *uploader) partSave(body io.Reader, name, cacheDir string) int64 {
@@ -131,7 +129,7 @@ func (u *uploader) partMerge(key string) (int, error) {
 		if err != nil {
 			return 0, fmt.Errorf("part file open failed")
 		}
-		if len(content) != item.PartSize {
+		if int64(len(content)) != item.PartSize {
 			return 0, fmt.Errorf("part file read size error")
 		}
 		n, _ := f.Write(content)
@@ -165,6 +163,6 @@ func (u *uploader) keyUploadIdMatch(key, uploadId string) bool {
 	return false
 }
 
-func genPartName(key string, partNum int64) string {
+func genPartName(key string, partNum int) string {
 	return fmt.Sprintf("%s_%d", key, partNum)
 }

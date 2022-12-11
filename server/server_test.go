@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/stretchr/testify/assert"
 	"io"
@@ -75,29 +76,50 @@ func TestServer_partUpload(t *testing.T) {
 	body := strings.NewReader("")
 	resp, err := http.Post(url, "application/json; charset=utf-8", body)
 	r.NoError(err)
-	t.Log(resp.Body)
+	data, err := io.ReadAll(resp.Body)
+	r.NoError(err)
+	res := respMsg{}
+	err = json.Unmarshal(data, &res)
+	r.NoError(err)
+	r.Contains(res.Msg, "success")
+	uploadId := res.Info.(map[string]interface{})["upload_id"]
+	t.Log(uploadId)
 
 	content1 := "aaa"
-	url1 := fmt.Sprintf("http://%s/zenfs/uploads/uploadPart?UploadId=15445&key=%s&PartNumber=1", address, key)
+	url1 := fmt.Sprintf("http://%s/zenfs/uploads/uploadPart?UploadId=%s&key=%s&PartNumber=1", address, uploadId, key)
 	body1 := strings.NewReader(content1)
 	resp1, err := http.Post(url1, "application/json; charset=utf-8", body1)
 	r.NoError(err)
-	t.Log(resp1.Body)
+	data, err = io.ReadAll(resp1.Body)
+	r.NoError(err)
+	res = respMsg{}
+	err = json.Unmarshal(data, &res)
+	r.NoError(err)
+	r.Contains(res.Msg, "success")
+	etags1 := res.Info.(map[string]interface{})["etags"]
+	t.Log(etags1)
 
 	content2 := "bbb"
-	url2 := fmt.Sprintf("http://%s/zenfs/uploads/uploadPart?UploadId=15445&key=%s&PartNumber=2", address, key)
+	url2 := fmt.Sprintf("http://%s/zenfs/uploads/uploadPart?UploadId=%s&key=%s&PartNumber=2", address, uploadId, key)
 	body2 := strings.NewReader(content2)
 	resp2, err := http.Post(url2, "application/json; charset=utf-8", body2)
 	r.NoError(err)
-	t.Log(resp2.Body)
+	data, err = io.ReadAll(resp2.Body)
+	r.NoError(err)
+	res = respMsg{}
+	err = json.Unmarshal(data, &res)
+	r.NoError(err)
+	r.Contains(res.Msg, "success")
+	etags2 := res.Info.(map[string]interface{})["etags"]
+	t.Log(etags2)
 
-	url3 := fmt.Sprintf("http://%s/zenfs/uploads/complete?uploadId=15445&key=%s", address, key)
+	url3 := fmt.Sprintf("http://%s/zenfs/uploads/complete?uploadId=%s&key=%s", address, uploadId, key)
 	body3 := strings.NewReader("[{\"Etag\":\"c1\",\"PartNumber\":1,\"PartSize\":193},{\"Etag\":\"bd\",\"PartNumber\":2,\"PartSize\":189}]\n")
 	resp3, err := http.Post(url3, "application/json; charset=utf-8", body3)
 	r.NoError(err)
 	t.Log(resp3.Body)
 
-	data, err := os.ReadFile(path.Join("./public", key))
+	data, err = os.ReadFile(path.Join("./public", key))
 	r.NoError(err)
 	r.Equal(content1+content2, string(data))
 	t.Log(string(data))
